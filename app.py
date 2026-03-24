@@ -109,26 +109,26 @@ def calc_year(row, prev_row):
         # Предельные затраты (col AB, AC)
         r["MCk"] = safe_div(r.get("ΔCk"), r.get("ΔEk"))
         r["MCp"] = safe_div(r.get("ΔCp"), r.get("ΔEp"))
-        # Критерий 22: MCp/MCk
-        r["crit22"] = safe_div(r.get("MCp"), r.get("MCk"))
+        # Критерий 22: MCk/MCp (факт/план, по МР 5.1.0158-19 п.5.3)
+        r["crit22"] = safe_div(r.get("MCk"), r.get("MCp"))
 
-        # Средние затраты на единицу снижения риска — ACDk
+        # Средние затраты на единицу снижения риска — ACDk (факт)
         r["ACDk_G"]  = safe_div(r.get("Ck"), r.get("ΔGk"))
         r["ACDk_R"]  = safe_div(r.get("Ck"), r.get("ΔRk"))
         r["ACDk_HI"] = safe_div(r.get("Ck"), r.get("ΔHIk"))
         r["ACDk_CR"] = safe_div(r.get("Ck"), r.get("ΔCRk"))
 
-        # ACDp
+        # ACDp (план)
         r["ACDp_G"]  = safe_div(r.get("Cp"), r.get("ΔGp"))
         r["ACDp_R"]  = safe_div(r.get("Cp"), r.get("ΔRp"))
         r["ACDp_HI"] = safe_div(r.get("Cp"), r.get("ΔHIp"))
         r["ACDp_CR"] = safe_div(r.get("Cp"), r.get("ΔCRp"))
 
-        # Критерии 23-26: ACDp/ACDk по каждому риску
-        r["crit23"] = safe_div(r.get("ACDp_G"),  r.get("ACDk_G"))
-        r["crit24"] = safe_div(r.get("ACDp_R"),  r.get("ACDk_R"))
-        r["crit25"] = safe_div(r.get("ACDp_HI"), r.get("ACDk_HI"))
-        r["crit26"] = safe_div(r.get("ACDp_CR"), r.get("ACDk_CR"))
+        # Критерии 23-26: ACDk/ACDp (факт/план, по МР 5.1.0158-19 п.5.4)
+        r["crit23"] = safe_div(r.get("ACDk_G"),  r.get("ACDp_G"))
+        r["crit24"] = safe_div(r.get("ACDk_R"),  r.get("ACDp_R"))
+        r["crit25"] = safe_div(r.get("ACDk_HI"), r.get("ACDp_HI"))
+        r["crit26"] = safe_div(r.get("ACDk_CR"), r.get("ACDp_CR"))
 
         # Предельные затраты на единицу снижения риска — MCDk, MCDp
         dG_k  = (r.get("ΔGk") or 0)  - (p.get("ΔGk") or 0)  if p else r.get("ΔGk")
