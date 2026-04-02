@@ -147,6 +147,8 @@ def calc_year(row, prev_row):
             if any(v is None for v in [mcd_k, acd_k, mcd_p, acd_p]): return None
             num = mcd_k - acd_k
             den = mcd_p - acd_p
+            # Оба равны нулю — план и факт совпадают, критерий = 1.0
+            if abs(den) < 1e-6 and abs(num) < 1e-6: return 1.0
             if abs(den) < 1e-6: return None
             if abs(num) > 1e-9 and abs(den) < abs(num) * 0.01: return None
             res = num / den
@@ -582,29 +584,210 @@ with tab_charts:
 # ── Экспорт ───────────────────────────────────────────────────────────────────
 st.markdown("---")
 st.markdown('<div class="section-title">💾 Экспорт результатов</div>', unsafe_allow_html=True)
-rows_exp = []
-for yr in YEARS:
-    r = results[yr]
-    rows_exp.append({
-        "Год": yr, "Базовый год": base_year_used,
-        "ΔGp": fmt(r.get("ΔGp")), "ΔRp": fmt(r.get("ΔRp")),
-        "ΔHIp": fmt(r.get("ΔHIp")), "ΔCRp": fmt_sci(r.get("ΔCRp")),
-        "ΔYp": fmt_big(r.get("ΔYp")), "Cp": fmt_big(r.get("Cp")),
-        "ΔGk": fmt(r.get("ΔGk")), "ΔRk": fmt(r.get("ΔRk")),
-        "ΔHIk": fmt(r.get("ΔHIk")), "ΔCRk": fmt_sci(r.get("ΔCRk")),
-        "ΔYk": fmt_big(r.get("ΔYk")), "Ck": fmt_big(r.get("Ck")),
-        "Рез.(15)": fmt(r.get("res_G")), "Рез.(16)": fmt(r.get("res_R")),
-        "Рез.(17)": fmt(r.get("res_HI")), "Рез.(18)": fmt(r.get("res_CR")),
-        "Рез.(19)": fmt(r.get("res_Y")), "Инт.рез.(20)": fmt(r.get("res_int")),
-        "Крит.21": fmt(r.get("crit21")), "Крит.22": fmt(r.get("crit22")),
-        "Крит.23": fmt(r.get("crit23")), "Крит.24": fmt(r.get("crit24")),
-        "Крит.25": fmt(r.get("crit25")), "Крит.26": fmt_sci(r.get("crit26")),
-        "Крит.27": fmt(r.get("crit27")), "Крит.28": fmt(r.get("crit28")),
-        "Крит.29": fmt(r.get("crit29")), "Крит.30": fmt_sci(r.get("crit30")),
-        "Инт.эфф.(31)": fmt(r.get("eff_int")),
-    })
-csv_data = pd.DataFrame(rows_exp).to_csv(index=False, encoding="utf-8-sig")
-st.download_button("⬇️ Скачать результаты (CSV)", data=csv_data,
-                   file_name="economic_efficiency_results.csv",
-                   mime="text/csv", use_container_width=True)
+
+def build_excel(results, years, base_yr):
+    """Формирует Excel-файл по структуре Программы_Пример_11_02_2020."""
+    import io
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Расчет"
+
+    # ── Цвета ──────────────────────────────────────────────────────────────────
+    BLUE_FILL   = PatternFill("solid", start_color="DCE6F1")  # исходные данные
+    GREEN_FILL  = PatternFill("solid", start_color="E2EFDA")  # результативность
+    ORANGE_FILL = PatternFill("solid", start_color="FCE4D6")  # эффективность
+    HEADER_FONT = Font(name="Arial", bold=True, size=9)
+    DATA_FONT   = Font(name="Arial", size=9)
+    CENTER      = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    thin        = Side(style="thin")
+    BORDER      = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    # Числовые форматы
+    INT_FMT  = '#\u00a0##0'          # 90 000
+    FLOAT3   = '0.000'
+    FLOAT6   = '0.000000'
+    SCI_FMT  = '0.00E+00'
+
+    # ── Строка 1: заголовок ────────────────────────────────────────────────────
+    ws.merge_cells("A1:BC1")
+    title_cell = ws["A1"]
+    title_cell.value = ("Оценка экономической эффективности реализации мероприятий "
+                        "по снижению уровней загрязнения атмосферного воздуха")
+    title_cell.font  = Font(name="Arial", bold=True, size=11)
+    title_cell.alignment = CENTER
+    ws.row_dimensions[1].height = 30
+
+    # ── Строки 2-4: группы заголовков ─────────────────────────────────────────
+    # Строка 2 — группы
+    groups = [
+        (3,  8,  f"Целевые показатели (базовый год — {base_yr})", BLUE_FILL),
+        (9,  14, f"Фактические данные",                           BLUE_FILL),
+        (15, 20, "Результативность (критериальный показатель)",   GREEN_FILL),
+        (27, 30, "Эффективность (критериальный показатель)",      ORANGE_FILL),
+        (39, 42, "Эффективность (критериальный показатель)",      ORANGE_FILL),
+        (51, 54, "Эффективность (критериальный показатель)",      ORANGE_FILL),
+        (55, 55, "Эффективность",                                 ORANGE_FILL),
+    ]
+    for c1, c2, label, fill in groups:
+        ws.merge_cells(
+            start_row=2, start_column=c1,
+            end_row=2,   end_column=c2
+        )
+        cell = ws.cell(row=2, column=c1, value=label)
+        cell.font = HEADER_FONT
+        cell.fill = fill
+        cell.alignment = CENTER
+        cell.border = BORDER
+
+    # ── Строка 3: символьные обозначения ──────────────────────────────────────
+    row3_headers = [
+        "№ п/п", "Год",
+        "∆Gp", "∆Rp", "∆HIp", "∆CRp", "∆Yp=∆Yhl+∆Yl", "Cp",
+        "∆Gk", "∆Rk", "∆HIk", "∆CRk", "∆Yk=∆Yhl+∆Yl", "Ck",
+        "∆Gk/∆Gp", "∆Rk/∆Rp", "∆HIk/∆HIp", "∆CRk/∆CRp", "∆Yk/∆Yp",
+        "Инт.рез.(20)",
+        "∆Сk", "Еk", "∆Еk", "∆Cp", "Ep", "∆Ep",
+        "Ek/Ep (21)", "МСk", "МСp", "MCk/MCp (22)",
+        "ACDk=Ck/∆Gk", "ACDk=Ck/∆Rk", "ACDk=Ck/∆HIk", "ACDk=Ck/∆CRk",
+        "ACDp=Cp/∆Gp", "ACDp=Cp/∆Rp", "ACDp=Cp/∆HIp", "ACDp=Cp/∆CRp",
+        "ACDk/ACDp ∆G (23)", "ACDk/ACDp ∆R (24)", "ACDk/ACDp ∆HI (25)", "ACDk/ACDp ∆CR (26)",
+        "MCDk ∆G", "MCDk ∆R", "MCDk ∆HI", "MCDk ∆CR",
+        "MCDp ∆G", "MCDp ∆R", "MCDp ∆HI", "MCDp ∆CR",
+        "MCD ∆G (27)", "MCD ∆R (28)", "MCD ∆HI (29)", "MCD ∆CR (30)",
+        "Инт.эфф.(31)",
+    ]
+    fill_map = {}
+    for col_i in range(3, 9):   fill_map[col_i] = BLUE_FILL
+    for col_i in range(9, 15):  fill_map[col_i] = BLUE_FILL
+    for col_i in range(15, 21): fill_map[col_i] = GREEN_FILL
+    for col_i in range(21, 56): fill_map[col_i] = ORANGE_FILL
+
+    for col_i, header in enumerate(row3_headers, start=1):
+        cell = ws.cell(row=3, column=col_i, value=header)
+        cell.font      = HEADER_FONT
+        cell.alignment = CENTER
+        cell.border    = BORDER
+        if col_i in fill_map:
+            cell.fill = fill_map[col_i]
+    ws.row_dimensions[3].height = 45
+
+    # ── Данные ─────────────────────────────────────────────────────────────────
+    def nv(v):
+        """None → None (для Excel пустая ячейка), иначе float."""
+        return None if v is None else float(v)
+
+    for i, yr in enumerate(years):
+        row = results[yr]
+        data_row = i + 4  # данные начинаются с 4-й строки
+
+        values = [
+            i + 1,                          # № п/п
+            yr,                             # Год
+            nv(row.get("ΔGp")),
+            nv(row.get("ΔRp")),
+            nv(row.get("ΔHIp")),
+            nv(row.get("ΔCRp")),
+            nv(row.get("ΔYp")),
+            nv(row.get("Cp")),
+            nv(row.get("ΔGk")),
+            nv(row.get("ΔRk")),
+            nv(row.get("ΔHIk")),
+            nv(row.get("ΔCRk")),
+            nv(row.get("ΔYk")),
+            nv(row.get("Ck")),
+            nv(row.get("res_G")),
+            nv(row.get("res_R")),
+            nv(row.get("res_HI")),
+            nv(row.get("res_CR")),
+            nv(row.get("res_Y")),
+            nv(row.get("res_int")),
+            nv(row.get("ΔCk")),
+            nv(row.get("Ek")),
+            nv(row.get("ΔEk")),
+            nv(row.get("ΔCp")),
+            nv(row.get("Ep")),
+            nv(row.get("ΔEp")),
+            nv(row.get("crit21")),
+            nv(row.get("MCk")),
+            nv(row.get("MCp")),
+            nv(row.get("crit22")),
+            nv(row.get("ACDk_G")),
+            nv(row.get("ACDk_R")),
+            nv(row.get("ACDk_HI")),
+            nv(row.get("ACDk_CR")),
+            nv(row.get("ACDp_G")),
+            nv(row.get("ACDp_R")),
+            nv(row.get("ACDp_HI")),
+            nv(row.get("ACDp_CR")),
+            nv(row.get("crit23")),
+            nv(row.get("crit24")),
+            nv(row.get("crit25")),
+            nv(row.get("crit26")),
+            nv(row.get("MCDk_G")),
+            nv(row.get("MCDk_R")),
+            nv(row.get("MCDk_HI")),
+            nv(row.get("MCDk_CR")),
+            nv(row.get("MCDp_G")),
+            nv(row.get("MCDp_R")),
+            nv(row.get("MCDp_HI")),
+            nv(row.get("MCDp_CR")),
+            nv(row.get("crit27")),
+            nv(row.get("crit28")),
+            nv(row.get("crit29")),
+            nv(row.get("crit30")),
+            nv(row.get("eff_int")),
+        ]
+
+        # Форматы для каждого столбца (по индексу 1-based)
+        col_fmts = {
+            1: None, 2: None,         # №, Год
+            3: FLOAT3, 4: FLOAT3, 5: FLOAT6, 6: SCI_FMT,
+            7: INT_FMT, 8: INT_FMT,   # ΔYp, Cp
+            9: FLOAT3, 10: FLOAT3, 11: FLOAT6, 12: SCI_FMT,
+            13: INT_FMT, 14: INT_FMT, # ΔYk, Ck
+        }
+        # Все остальные столбцы с 15 по 55 — FLOAT3
+        for ci in range(15, 56):
+            if ci not in col_fmts:
+                col_fmts[ci] = FLOAT3
+        # CR-колонки — научная нотация
+        for ci in [6, 12, 34, 38, 42]:
+            col_fmts[ci] = SCI_FMT
+
+        for col_i, val in enumerate(values, start=1):
+            cell = ws.cell(row=data_row, column=col_i, value=val)
+            cell.font      = DATA_FONT
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+            cell.border    = BORDER
+            if col_i in fill_map and val is not None:
+                cell.fill = fill_map[col_i]
+            if val is not None and col_fmts.get(col_i):
+                cell.number_format = col_fmts[col_i]
+
+    # ── Ширина столбцов ────────────────────────────────────────────────────────
+    ws.column_dimensions["A"].width = 5
+    ws.column_dimensions["B"].width = 6
+    for col_i in range(3, 56):
+        ws.column_dimensions[get_column_letter(col_i)].width = 12
+
+    # Фиксация первых двух столбцов и строки заголовка
+    ws.freeze_panes = "C4"
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf.getvalue()
+
+xlsx_data = build_excel(results, YEARS, base_year_used)
+st.download_button(
+    "⬇️ Скачать результаты (Excel)",
+    data=xlsx_data,
+    file_name="economic_efficiency_results.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    use_container_width=True,
+)
 st.caption("МР 5.1.0158-19 · Федеральный проект «Чистый воздух»")
